@@ -1,15 +1,30 @@
 local curl = require 'plenary.curl'
-local M = {
+
+-- Default configuration
+local default_config = {
   schemas_catalog = 'datreeio/CRDs-catalog',
-  schema_catalog_branch = 'main',
+  schema_catalog_ref = 'main',
   github_base_api_url = 'https://api.github.com/repos',
   github_headers = {
     Accept = 'application/vnd.github+json',
     ['X-GitHub-Api-Version'] = '2022-11-28',
   },
+}
+
+local M = {
+  config = vim.deepcopy(default_config),
   schema_cache = {}, -- Cache for downloaded schemas
 }
-M.schema_url = 'https://raw.githubusercontent.com/' .. M.schemas_catalog .. '/' .. M.schema_catalog_branch
+
+-- Setup function to configure the plugin
+M.setup = function(opts)
+  opts = opts or {}
+  M.config = vim.tbl_deep_extend('force', default_config, opts)
+  M.schema_url = 'https://raw.githubusercontent.com/' .. M.config.schemas_catalog .. '/' .. M.config.schema_catalog_ref
+end
+
+-- Initialize with default config
+M.schema_url = 'https://raw.githubusercontent.com/' .. M.config.schemas_catalog .. '/' .. M.config.schema_catalog_ref
 
 -- Download and cache the list of CRDs
 M.list_github_tree = function()
@@ -17,8 +32,8 @@ M.list_github_tree = function()
     return M.schema_cache.trees -- Return cached data if available
   end
 
-  local url = M.github_base_api_url .. '/' .. M.schemas_catalog .. '/git/trees/' .. M.schema_catalog_branch
-  local response = curl.get(url, { headers = M.github_headers, query = { recursive = 1 } })
+  local url = M.config.github_base_api_url .. '/' .. M.config.schemas_catalog .. '/git/trees/' .. M.config.schema_catalog_ref
+  local response = curl.get(url, { headers = M.config.github_headers, query = { recursive = 1 } })
   local body = vim.fn.json_decode(response.body)
   local trees = {}
   for _, tree in ipairs(body.tree) do
@@ -150,13 +165,13 @@ M.get_kubernetes_schema_url = function(api_version, kind)
       kind:lower() .. '.json'
 
   -- Try to fetch the schema with the version suffix first
-  local response_with_version = curl.get(url_with_version, { headers = M.github_headers })
+  local response_with_version = curl.get(url_with_version, { headers = M.config.github_headers })
   if response_with_version.status == 200 then
     return url_with_version
   end
 
   -- If the schema with the version suffix doesn't exist, try without the version suffix
-  local response_without_version = curl.get(url_without_version, { headers = M.github_headers })
+  local response_without_version = curl.get(url_without_version, { headers = M.config.github_headers })
   if response_without_version.status == 200 then
     return url_without_version
   end

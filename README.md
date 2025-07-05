@@ -10,8 +10,21 @@ Install the plugin with your package manager:
 
 ### [lazy.nvim](https://github.com/folke/lazy.nvim)
 
-```yaml
+```lua
 {
   "manzanit0/k8s-whisper.nvim",
+  config = function()
+    require('k8s-whisper').setup({
+        -- This is a GitHub repository
+        schemas_catalog = 'datreeio/CRDs-catalog',
+        -- This is a git ref, branch, tag, sha, etc.
+        schema_catalog_ref = 'main',
+    })
+  end
 }
 ```
+
+## TODO
+
+- read https://zignar.net/2022/11/06/structuring-neovim-lua-plugins/
+- Can it be configured as an LSP so that LSPStop works?

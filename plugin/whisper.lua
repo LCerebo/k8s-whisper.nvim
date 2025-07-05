@@ -7,7 +7,7 @@ vim.api.nvim_create_autocmd('FileType', {
     local clients = vim.lsp.get_clients({ name = 'yamlls', bufnr = bufnr })
     if #clients > 0 then
       -- If the server is already running, call init()
-      require('whisper').init(bufnr)
+      require('k8s-whisper').init(bufnr)
     else
       -- If the server is not running, wait for it to start
       vim.api.nvim_create_autocmd('LspAttach', {
@@ -16,7 +16,7 @@ vim.api.nvim_create_autocmd('FileType', {
         callback = function(lsp_args)
           local client = vim.lsp.get_client_by_id(lsp_args.data.client_id)
           if client and client.name == 'yamlls' then
-            require('whisper').init(bufnr)
+            require('k8s-whisper').init(bufnr)
           end
         end,
       })
