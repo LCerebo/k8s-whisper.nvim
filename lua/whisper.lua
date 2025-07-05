@@ -30,14 +30,44 @@ M.list_github_tree = function()
   return trees
 end
 
--- Extract apiVersion and kind from YAML content
+-- Extract apiVersion and kind from YAML content, handling multiple resources
 M.extract_api_version_and_kind = function(buffer_content)
-  -- Remove the document separator (---) if present
-  buffer_content = buffer_content:gsub('^%-%-%-%s*\n', '')
-  -- Scan the entire file for apiVersion and kind
-  local api_version = buffer_content:match('apiVersion:%s*([%w%.%/%-]+)')
-  local kind = buffer_content:match('kind:%s*([%w%-]+)')
-  return api_version, kind
+  -- Split the content by document separators (---)
+  local documents = {}
+  local current_doc = ""
+
+  for line in buffer_content:gmatch("[^\n]*") do
+    if line:match("^%-%-%-%s*$") then
+      if current_doc:match("%S") then -- Only add non-empty documents
+        table.insert(documents, current_doc)
+      end
+      current_doc = ""
+    else
+      current_doc = current_doc .. line .. "\n"
+    end
+  end
+
+  -- Add the last document if it exists
+  if current_doc:match("%S") then
+    table.insert(documents, current_doc)
+  end
+
+  -- If no documents were found, treat the entire content as one document
+  if #documents == 0 then
+    documents = { buffer_content }
+  end
+
+  -- Extract apiVersion and kind from each document
+  local resources = {}
+  for _, doc in ipairs(documents) do
+    local api_version = doc:match('apiVersion:%s*([%w%.%/%-]+)')
+    local kind = doc:match('kind:%s*([%w%-]+)')
+    if api_version and kind then
+      table.insert(resources, { api_version = api_version, kind = kind })
+    end
+  end
+
+  return resources
 end
 
 -- Normalize apiVersion and kind to match CRD schema naming convention
@@ -58,21 +88,27 @@ end
 
 -- Match the CRD schema based on apiVersion and kind
 M.match_crd = function(buffer_content)
-  local api_version, kind = M.extract_api_version_and_kind(buffer_content)
-  if not api_version or not kind then
+  local resources = M.extract_api_version_and_kind(buffer_content)
+  if not resources or #resources == 0 then
     return nil
   end
-  local crd_name = M.normalize_crd_name(api_version, kind)
-  if not crd_name then
-    return nil
-  end
+
   local all_crds = M.list_github_tree()
-  for _, crd in ipairs(all_crds) do
-    if crd:match(crd_name) then
-      return crd
+  local matched_crds = {}
+
+  for _, resource in ipairs(resources) do
+    local crd_name = M.normalize_crd_name(resource.api_version, resource.kind)
+    if crd_name then
+      for _, crd in ipairs(all_crds) do
+        if crd:match(crd_name) then
+          table.insert(matched_crds, { crd = crd, resource = resource })
+          break
+        end
+      end
     end
   end
-  return nil
+
+  return matched_crds
 end
 
 -- Attach a schema to the buffer
@@ -137,21 +173,30 @@ M.init = function(bufnr)
   vim.b[bufnr].schema_attached = true -- Mark the schema as attached
 
   local buffer_content = table.concat(vim.api.nvim_buf_get_lines(bufnr, 0, -1, false), '\n')
-  local crd = M.match_crd(buffer_content)
-  if crd then
-    -- Attach the CRD schema
-    local schema_url = M.schema_url .. '/' .. crd
-    M.attach_schema(schema_url, 'CRD schema for ' .. crd)
+  local matched_crds = M.match_crd(buffer_content)
+
+  if matched_crds and #matched_crds > 0 then
+    -- Attach schemas for all matched CRDs
+    for _, match in ipairs(matched_crds) do
+      local schema_url = M.schema_url .. '/' .. match.crd
+      M.attach_schema(schema_url, 'CRD schema for ' .. match.resource.kind)
+    end
   else
-    -- Check if the file is a Kubernetes YAML file
-    local api_version, kind = M.extract_api_version_and_kind(buffer_content)
-    if api_version and kind then
-      -- Attach the Kubernetes schema
-      local kubernetes_schema_url = M.get_kubernetes_schema_url(api_version, kind)
-      if kubernetes_schema_url then
-        M.attach_schema(kubernetes_schema_url, 'Kubernetes schema for ' .. kind)
-      else
-        vim.notify('No Kubernetes schema found for ' .. kind .. ' with apiVersion ' .. api_version, vim.log.levels.WARN)
+    -- Check if the file contains Kubernetes YAML resources
+    local resources = M.extract_api_version_and_kind(buffer_content)
+    if resources and #resources > 0 then
+      local attached_any = false
+      for _, resource in ipairs(resources) do
+        -- Attach the Kubernetes schema
+        local kubernetes_schema_url = M.get_kubernetes_schema_url(resource.api_version, resource.kind)
+        if kubernetes_schema_url then
+          M.attach_schema(kubernetes_schema_url, 'Kubernetes schema for ' .. resource.kind)
+          attached_any = true
+        end
+      end
+
+      if not attached_any then
+        vim.notify('No Kubernetes schemas found for any resources in this file', vim.log.levels.WARN)
       end
     else
       -- Fall back to the default LSP configuration
