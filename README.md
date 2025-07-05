@@ -28,3 +28,7 @@ Install the plugin with your package manager:
 
 - read https://zignar.net/2022/11/06/structuring-neovim-lua-plugins/
 - Can it be configured as an LSP so that LSPStop works?
+
+## Credit
+
+https://www.reddit.com/r/neovim/comments/1iykmqc/improving_kubernetes_yaml_support_in_neovim_crds/
